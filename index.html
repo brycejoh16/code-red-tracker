@@ -4,34 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>608 Elite · Code Red Game Tracker</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f7faf8; color: #111827; }
-    #root { min-height: 100vh; min-height: 100dvh; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:#f7faf8; color:#111827; }
+    button { font-family:inherit; }
+    #root { min-height:100vh; min-height:100dvh; }
+    #error-box { display:none; position:fixed; top:20px; left:20px; right:20px; background:#fef2f2; border:2px solid #fca5a5; border-radius:12px; padding:16px; z-index:999; color:#dc2626; font-size:13px; font-weight:600; }
   </style>
-
-  <!-- ═══ Firebase SDK (compat builds for simplicity) ═══ -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-
-  <!-- ═══ React + Babel (no build step) ═══ -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/htm@3/dist/htm.js"></script>
 </head>
 <body>
 <div id="root"></div>
+<div id="error-box"></div>
+<script>
+// ═══ htm setup — like JSX but no build step ═══
+var html = htm.bind(React.createElement);
+var useState = React.useState, useEffect = React.useEffect, useCallback = React.useCallback;
 
-<script type="text/babel" data-type="module">
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  STEP 1: Paste your Firebase config below.                  ║
-// ║  Get it from: console.firebase.google.com → your project    ║
-// ║  → Project Settings → General → Your apps → Config          ║
-// ╚══════════════════════════════════════════════════════════════╝
-const firebaseConfig = {
+// ═══ Firebase Config ═══
+var firebaseConfig = {
   apiKey:            "AIzaSyBpQ9-L5BdDqMZ60Lr97Mfu4Qs1dZ2vijQ",
   authDomain:        "code-red-tracker.firebaseapp.com",
   databaseURL:       "https://code-red-tracker-default-rtdb.firebaseio.com",
@@ -41,423 +38,322 @@ const firebaseConfig = {
   appId:             "1:605986039711:web:84239e4044c755dedb3faa"
 };
 
-// ═══ Initialize Firebase ═══
-const app = firebase.initializeApp(firebaseConfig);
-const db  = firebase.database();
+try { firebase.initializeApp(firebaseConfig); } catch(e) {
+  document.getElementById("error-box").style.display="block";
+  document.getElementById("error-box").textContent="Firebase init failed: "+e.message;
+}
+var db = firebase.database();
 
-// ═══ Firebase helpers ═══
 function dbSet(path, val) { return db.ref(path).set(val); }
-function dbGet(path) { return db.ref(path).once("value").then(s => s.val()); }
-function dbListen(path, cb) { const ref = db.ref(path); ref.on("value", s => cb(s.val())); return () => ref.off("value"); }
+function dbListen(path, cb) { var ref=db.ref(path); ref.on("value",function(s){cb(s.val())}); return function(){ref.off("value")}; }
 
 // ═══ Constants ═══
-const { useState, useEffect, useCallback, useRef } = React;
-
-const PEOPLE = [
-  { name: "Bryce",    gender: "M" },
-  { name: "Brooke",   gender: "F" },
-  { name: "Faysal",   gender: "M" },
-  { name: "Evan",     gender: "M" },
-  { name: "Morgan",   gender: "F" },
-  { name: "Quintinn", gender: "M" },
-  { name: "Josh",     gender: "M" },
-  { name: "Sydney",   gender: "F" },
-  { name: "Isaac",    gender: "M" },
-  { name: "Adam",     gender: "M" },
-  { name: "Jenna",    gender: "F" },
+var PEOPLE = [
+  {name:"Bryce",gender:"M"},{name:"Brooke",gender:"F"},{name:"Faysal",gender:"M"},
+  {name:"Evan",gender:"M"},{name:"Morgan",gender:"F"},{name:"Quintinn",gender:"M"},
+  {name:"Josh",gender:"M"},{name:"Sydney",gender:"F"},{name:"Isaac",gender:"M"},
+  {name:"Adam",gender:"M"},{name:"Jenna",gender:"F"}
 ];
 
-const DEFAULT_GAMES = [
-  { id:"g01", date:"2026-06-17", time:"9:00 PM", opponent:"Fire Fairies",             location:"Field 2", homeAway:"home" },
-  { id:"g02", date:"2026-06-24", time:"6:00 PM", opponent:"Chugga Chugga Shoot Shoot", location:"Field 1", homeAway:"home" },
-  { id:"g03", date:"2026-07-01", time:"8:00 PM", opponent:"Old Knees Bad Ankles",      location:"Field 1", homeAway:"home" },
-  { id:"g04", date:"2026-07-08", time:"8:00 PM", opponent:"The Grady Bunch",           location:"Field 2", homeAway:"away" },
-  { id:"g05", date:"2026-07-15", time:"9:00 PM", opponent:"Madison United FC",         location:"Field 2", homeAway:"away" },
-  { id:"g06", date:"2026-07-22", time:"9:00 PM", opponent:"Fire Fairies",              location:"Field 2", homeAway:"home" },
-  { id:"g07", date:"2026-07-29", time:"8:00 PM", opponent:"Chugga Chugga Shoot Shoot", location:"Field 1", homeAway:"home" },
-  { id:"g08", date:"2026-08-05", time:"6:00 PM", opponent:"PPI Green",                 location:"Field 2", homeAway:"away" },
+var DEFAULT_GAMES = [
+  {id:"g01",date:"2026-06-17",time:"9:00 PM",opponent:"Fire Fairies",location:"Field 2",homeAway:"home"},
+  {id:"g02",date:"2026-06-24",time:"6:00 PM",opponent:"Chugga Chugga Shoot Shoot",location:"Field 1",homeAway:"home"},
+  {id:"g03",date:"2026-07-01",time:"8:00 PM",opponent:"Old Knees Bad Ankles",location:"Field 1",homeAway:"home"},
+  {id:"g04",date:"2026-07-08",time:"8:00 PM",opponent:"The Grady Bunch",location:"Field 2",homeAway:"away"},
+  {id:"g05",date:"2026-07-15",time:"9:00 PM",opponent:"Madison United FC",location:"Field 2",homeAway:"away"},
+  {id:"g06",date:"2026-07-22",time:"9:00 PM",opponent:"Fire Fairies",location:"Field 2",homeAway:"home"},
+  {id:"g07",date:"2026-07-29",time:"8:00 PM",opponent:"Chugga Chugga Shoot Shoot",location:"Field 1",homeAway:"home"},
+  {id:"g08",date:"2026-08-05",time:"6:00 PM",opponent:"PPI Green",location:"Field 2",homeAway:"away"}
 ];
 
-const STATUS = {
-  in:    { label:"In",    emoji:"✓", bg:"#dcfce7", color:"#15803d", border:"#bbf7d0" },
-  out:   { label:"Out",   emoji:"✗", bg:"#fee2e2", color:"#dc2626", border:"#fecaca" },
-  maybe: { label:"Maybe", emoji:"?", bg:"#fef3c7", color:"#b45309", border:"#fde68a" },
+var STATUS = {
+  "in":   {label:"In",   emoji:"✓",bg:"#dcfce7",color:"#15803d",border:"#bbf7d0"},
+  "out":  {label:"Out",  emoji:"✗",bg:"#fee2e2",color:"#dc2626",border:"#fecaca"},
+  "maybe":{label:"Maybe",emoji:"?",bg:"#fef3c7",color:"#b45309",border:"#fde68a"}
 };
 
-function formatDate(d) {
-  if (!d) return "";
-  return new Date(d+"T12:00:00").toLocaleDateString("en-US",{ weekday:"short", month:"short", day:"numeric" });
+function fmtDate(d) {
+  if(!d) return "";
+  return new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
 }
 function genId() { return "g"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-function today() { return new Date().toISOString().split("T")[0]; }
+function getToday() { return new Date().toISOString().split("T")[0]; }
+function getRsvp(rsvps,name,gid) { return rsvps && rsvps[name] && rsvps[name][gid] || null; }
 
-// ─── Identity Picker ───
-function PickIdentity({ onPick }) {
-  return (
-    <div style={{ minHeight:"100vh", background:"#f7faf8", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ textAlign:"center", marginBottom:32 }}>
-        <div style={{ fontSize:40, marginBottom:8 }}>⚽</div>
-        <h1 style={{ fontSize:22, fontWeight:700, margin:0 }}>608 Elite Game Tracker</h1>
-        <p style={{ color:"#6b7280", fontSize:14, marginTop:6 }}>Who are you?</p>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, width:"100%", maxWidth:340 }}>
-        {PEOPLE.map(p => (
-          <button key={p.name} onClick={() => onPick(p.name)} style={{
-            padding:"14px 8px", borderRadius:12, border:"2px solid #e5e7eb", background:"#fff", cursor:"pointer",
-            fontSize:15, fontWeight:600, color:"#111827", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-          }}>
-            <span style={{ fontSize:12, color: p.gender==="M" ? "#3b82f6" : "#ec4899" }}>{p.gender==="M" ? "♂" : "♀"}</span>
-            {p.name}
-          </button>
-        ))}
-      </div>
+// ─── Pick Identity ───
+function PickIdentity(props) {
+  return html`<div style=${{minHeight:"100vh",background:"#f7faf8",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style=${{textAlign:"center",marginBottom:32}}>
+      <div style=${{fontSize:40,marginBottom:8}}>⚽</div>
+      <h1 style=${{fontSize:22,fontWeight:700,margin:0}}>608 Elite Game Tracker</h1>
+      <p style=${{color:"#6b7280",fontSize:14,marginTop:6}}>Who are you?</p>
     </div>
-  );
+    <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,width:"100%",maxWidth:340}}>
+      ${PEOPLE.map(function(p){return html`<button key=${p.name} onClick=${function(){props.onPick(p.name)}} style=${{
+        padding:"14px 8px",borderRadius:12,border:"2px solid #e5e7eb",background:"#fff",cursor:"pointer",
+        fontSize:15,fontWeight:600,color:"#111827",display:"flex",alignItems:"center",justifyContent:"center",gap:6
+      }}><span style=${{fontSize:12,color:p.gender==="M"?"#3b82f6":"#ec4899"}}>${p.gender==="M"?"♂":"♀"}</span> ${p.name}</button>`})}
+    </div>
+  </div>`;
 }
 
 // ─── Game Form ───
-function GameForm({ game, onSave, onCancel }) {
-  const [date, setDate]         = useState(game?.date || "");
-  const [time, setTime]         = useState(game?.time || "");
-  const [opponent, setOpponent] = useState(game?.opponent || "");
-  const [location, setLocation] = useState(game?.location || "");
-  const [homeAway, setHomeAway] = useState(game?.homeAway || "home");
-  const inp = { width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #d1d5db", fontSize:15, fontFamily:"inherit", outline:"none", boxSizing:"border-box", background:"#fff", color:"#111827" };
-  const lbl = { fontSize:12, fontWeight:600, color:"#374151", marginBottom:4, display:"block", textTransform:"uppercase", letterSpacing:"0.04em" };
-
-  return (
-    <div style={{ padding:16 }}>
-      <h3 style={{ fontSize:17, fontWeight:700, marginTop:0, marginBottom:16 }}>{game ? "Edit Game" : "Add Game"}</h3>
-      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-          <div><label style={lbl}>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
-          <div><label style={lbl}>Time</label><input type="text" value={time} onChange={e=>setTime(e.target.value)} placeholder="6:30 PM" style={inp}/></div>
-        </div>
-        <div><label style={lbl}>Opponent</label><input type="text" value={opponent} onChange={e=>setOpponent(e.target.value)} placeholder="Team name" style={inp}/></div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-          <div><label style={lbl}>Location</label><input type="text" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Field" style={inp}/></div>
-          <div>
-            <label style={lbl}>Home / Away</label>
-            <div style={{ display:"flex", gap:6 }}>
-              {["home","away"].map(ha => (
-                <button key={ha} onClick={()=>setHomeAway(ha)} style={{
-                  flex:1, padding:"10px 0", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer",
-                  border: homeAway===ha ? `2px solid ${ha==="home"?"#15803d":"#7c3aed"}` : "2px solid #e5e7eb",
-                  background: homeAway===ha ? (ha==="home"?"#dcfce7":"#ede9fe") : "#fafafa",
-                  color: homeAway===ha ? (ha==="home"?"#15803d":"#7c3aed") : "#9ca3af",
-                }}>{ha==="home"?"🏠 Home":"✈️ Away"}</button>
-              ))}
-            </div>
+function GameForm(props) {
+  var game = props.game;
+  var s = useState(game&&game.date||""), date=s[0], setDate=s[1];
+  s=useState(game&&game.time||""); var time=s[0],setTime=s[1];
+  s=useState(game&&game.opponent||""); var opp=s[0],setOpp=s[1];
+  s=useState(game&&game.location||""); var loc=s[0],setLoc=s[1];
+  s=useState(game&&game.homeAway||"home"); var ha=s[0],setHa=s[1];
+  var inp={width:"100%",padding:"10px 12px",borderRadius:8,border:"1.5px solid #d1d5db",fontSize:15,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"#fff",color:"#111827"};
+  var lbl={fontSize:12,fontWeight:600,color:"#374151",marginBottom:4,display:"block",textTransform:"uppercase",letterSpacing:"0.04em"};
+  return html`<div style=${{padding:16}}>
+    <h3 style=${{fontSize:17,fontWeight:700,marginTop:0,marginBottom:16}}>${game?"Edit Game":"Add Game"}</h3>
+    <div style=${{display:"flex",flexDirection:"column",gap:14}}>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div><label style=${lbl}>Date</label><input type="date" value=${date} onInput=${function(e){setDate(e.target.value)}} style=${inp}/></div>
+        <div><label style=${lbl}>Time</label><input type="text" value=${time} onInput=${function(e){setTime(e.target.value)}} placeholder="6:30 PM" style=${inp}/></div>
+      </div>
+      <div><label style=${lbl}>Opponent</label><input type="text" value=${opp} onInput=${function(e){setOpp(e.target.value)}} placeholder="Team name" style=${inp}/></div>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div><label style=${lbl}>Location</label><input type="text" value=${loc} onInput=${function(e){setLoc(e.target.value)}} placeholder="Field" style=${inp}/></div>
+        <div><label style=${lbl}>Home / Away</label>
+          <div style=${{display:"flex",gap:6}}>
+            ${["home","away"].map(function(v){return html`<button key=${v} onClick=${function(){setHa(v)}} style=${{
+              flex:1,padding:"10px 0",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",
+              border:ha===v?"2px solid "+(v==="home"?"#15803d":"#7c3aed"):"2px solid #e5e7eb",
+              background:ha===v?(v==="home"?"#dcfce7":"#ede9fe"):"#fafafa",
+              color:ha===v?(v==="home"?"#15803d":"#7c3aed"):"#9ca3af"
+            }}>${v==="home"?"🏠 Home":"✈️ Away"}</button>`})}
           </div>
         </div>
-        <div style={{ display:"flex", gap:10, marginTop:4 }}>
-          <button onClick={onCancel} style={{ flex:1, padding:"11px 0", borderRadius:10, border:"1.5px solid #d1d5db", background:"#fff", fontSize:14, fontWeight:600, color:"#374151", cursor:"pointer" }}>Cancel</button>
-          <button disabled={!date} onClick={()=>{ if(date) onSave({ id:game?.id||genId(), date, time, opponent, location, homeAway }); }}
-            style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:date?"#15803d":"#d1d5db", fontSize:14, fontWeight:600, color:date?"#fff":"#9ca3af", cursor:date?"pointer":"default" }}>Save</button>
-        </div>
+      </div>
+      <div style=${{display:"flex",gap:10,marginTop:4}}>
+        <button onClick=${props.onCancel} style=${{flex:1,padding:"11px 0",borderRadius:10,border:"1.5px solid #d1d5db",background:"#fff",fontSize:14,fontWeight:600,color:"#374151",cursor:"pointer"}}>Cancel</button>
+        <button disabled=${!date} onClick=${function(){if(date)props.onSave({id:game&&game.id||genId(),date:date,time:time,opponent:opp,location:loc,homeAway:ha})}} style=${{
+          flex:1,padding:"11px 0",borderRadius:10,border:"none",background:date?"#15803d":"#d1d5db",fontSize:14,fontWeight:600,color:date?"#fff":"#9ca3af",cursor:date?"pointer":"default"
+        }}>Save</button>
       </div>
     </div>
-  );
+  </div>`;
 }
 
 // ─── Game Card ───
-function GameCard({ game, rsvps, identity, onRsvp, onExpand, expanded, isAdmin, onDelete, onEdit }) {
-  const attending = PEOPLE.filter(p => rsvps[p.name]?.[game.id] === "in");
-  const guysIn    = attending.filter(p => p.gender==="M").length;
-  const girlsIn   = attending.filter(p => p.gender==="F").length;
-  const myStatus  = rsvps[identity]?.[game.id] || null;
-  const isPast    = new Date(game.date+"T23:59:59") < new Date();
-  const isToday_  = game.date === today();
+function GameCard(props) {
+  var game=props.game, rsvps=props.rsvps, identity=props.identity;
+  var attending = PEOPLE.filter(function(p){return getRsvp(rsvps,p.name,game.id)==="in"});
+  var guysIn = attending.filter(function(p){return p.gender==="M"}).length;
+  var girlsIn = attending.filter(function(p){return p.gender==="F"}).length;
+  var myStatus = getRsvp(rsvps,identity,game.id);
+  var isPast = new Date(game.date+"T23:59:59") < new Date();
+  var isToday = game.date === getToday();
 
-  return (
-    <div style={{
-      background:"#fff", borderRadius:14, border:isToday_ ? "2px solid #15803d" : "1.5px solid #e5e7eb", overflow:"hidden",
-      opacity:isPast?0.55:1, boxShadow:isToday_?"0 0 0 3px rgba(21,128,61,0.1)":"none",
-    }}>
-      <div onClick={()=>onExpand(expanded?null:game.id)} style={{ padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:"#15803d", marginBottom:2, display:"flex", alignItems:"center", gap:6 }}>
-            {formatDate(game.date)}{game.time ? ` · ${game.time}` : ""}
-            {isToday_ && <span style={{ fontSize:10, fontWeight:800, background:"#15803d", color:"#fff", padding:"1px 6px", borderRadius:4, textTransform:"uppercase" }}>Tonight</span>}
-          </div>
-          <div style={{ fontSize:16, fontWeight:700, display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-            <span>vs {game.opponent||"TBD"}</span>
-            {game.homeAway && <span style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.05em", padding:"2px 6px", borderRadius:5,
-              background:game.homeAway==="home"?"#dcfce7":"#ede9fe", color:game.homeAway==="home"?"#15803d":"#7c3aed" }}>{game.homeAway==="home"?"HOME":"AWAY"}</span>}
-          </div>
-          {game.location && <div style={{ fontSize:12, color:"#6b7280", marginTop:2 }}>📍 {game.location}</div>}
+  return html`<div style=${{background:"#fff",borderRadius:14,border:isToday?"2px solid #15803d":"1.5px solid #e5e7eb",overflow:"hidden",opacity:isPast?0.55:1,boxShadow:isToday?"0 0 0 3px rgba(21,128,61,0.1)":"none"}}>
+    <div onClick=${function(){props.onExpand(props.expanded?null:game.id)}} style=${{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+      <div style=${{flex:1,minWidth:0}}>
+        <div style=${{fontSize:13,fontWeight:600,color:"#15803d",marginBottom:2,display:"flex",alignItems:"center",gap:6}}>
+          ${fmtDate(game.date)}${game.time?" · "+game.time:""}
+          ${isToday?html`<span style=${{fontSize:10,fontWeight:800,background:"#15803d",color:"#fff",padding:"1px 6px",borderRadius:4,textTransform:"uppercase"}}>Tonight</span>`:null}
         </div>
-        <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
-          <div style={{ background:"#dbeafe", color:"#1d4ed8", padding:"4px 8px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", alignItems:"center", gap:3 }}><span>♂</span>{guysIn}</div>
-          <div style={{ background:"#fce7f3", color:"#be185d", padding:"4px 8px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", alignItems:"center", gap:3 }}><span>♀</span>{girlsIn}</div>
-          <div style={{ fontSize:12, color:"#6b7280", fontWeight:600, minWidth:20, textAlign:"center" }}>{attending.length}</div>
-          <span style={{ fontSize:12, color:"#9ca3af", transform:expanded?"rotate(180deg)":"rotate(0)", transition:"0.2s" }}>▼</span>
+        <div style=${{fontSize:16,fontWeight:700,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <span>vs ${game.opponent||"TBD"}</span>
+          ${game.homeAway?html`<span style=${{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",padding:"2px 6px",borderRadius:5,background:game.homeAway==="home"?"#dcfce7":"#ede9fe",color:game.homeAway==="home"?"#15803d":"#7c3aed"}}>${game.homeAway==="home"?"HOME":"AWAY"}</span>`:null}
         </div>
+        ${game.location?html`<div style=${{fontSize:12,color:"#6b7280",marginTop:2}}>📍 ${game.location}</div>`:null}
       </div>
-
-      <div style={{ padding:"0 16px 12px", display:"flex", gap:8 }}>
-        {["in","out","maybe"].map(s => {
-          const c = STATUS[s]; const act = myStatus===s;
-          return (<button key={s} onClick={()=>onRsvp(game.id, myStatus===s?null:s)} style={{
-            flex:1, padding:"9px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer",
-            border:act?`2px solid ${c.color}`:"2px solid #e5e7eb", background:act?c.bg:"#fafafa", color:act?c.color:"#9ca3af",
-          }}>{c.emoji} {c.label}</button>);
-        })}
+      <div style=${{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+        <div style=${{background:"#dbeafe",color:"#1d4ed8",padding:"4px 8px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>♂ ${guysIn}</div>
+        <div style=${{background:"#fce7f3",color:"#be185d",padding:"4px 8px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>♀ ${girlsIn}</div>
+        <div style=${{fontSize:12,color:"#6b7280",fontWeight:600,minWidth:20,textAlign:"center"}}>${attending.length}</div>
+        <span style=${{fontSize:12,color:"#9ca3af",transform:props.expanded?"rotate(180deg)":"rotate(0)",transition:"0.2s"}}>▼</span>
       </div>
-
-      {expanded && (
-        <div style={{ borderTop:"1px solid #f3f4f6", padding:"12px 16px" }}>
-          <div style={{ fontSize:12, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>Responses</div>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {PEOPLE.map(p => {
-              const st = rsvps[p.name]?.[game.id]; const c = st?STATUS[st]:null;
-              return (<div key={p.name} style={{ padding:"5px 10px", borderRadius:8, fontSize:12, fontWeight:600,
-                background:c?c.bg:"#f3f4f6", color:c?c.color:"#9ca3af", border:`1px solid ${c?c.border:"#e5e7eb"}` }}>{p.name}{st?` ${c.emoji}`:""}</div>);
-            })}
-          </div>
-          {isAdmin && (
-            <div style={{ display:"flex", gap:8, marginTop:12, paddingTop:10, borderTop:"1px solid #f3f4f6" }}>
-              <button onClick={()=>onEdit(game)} style={{ flex:1, padding:"8px 0", borderRadius:8, border:"1.5px solid #d1d5db", background:"#fff", fontSize:12, fontWeight:600, color:"#374151", cursor:"pointer" }}>Edit</button>
-              <button onClick={()=>{ if(confirm("Delete this game?")) onDelete(game.id); }} style={{ flex:1, padding:"8px 0", borderRadius:8, border:"1.5px solid #fca5a5", background:"#fef2f2", fontSize:12, fontWeight:600, color:"#dc2626", cursor:"pointer" }}>Delete</button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
-  );
+    <div style=${{padding:"0 16px 12px",display:"flex",gap:8}}>
+      ${["in","out","maybe"].map(function(st){var c=STATUS[st]; var act=myStatus===st; return html`<button key=${st} onClick=${function(){props.onRsvp(game.id,myStatus===st?null:st)}} style=${{
+        flex:1,padding:"9px 0",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer",
+        border:act?"2px solid "+c.color:"2px solid #e5e7eb",background:act?c.bg:"#fafafa",color:act?c.color:"#9ca3af"
+      }}>${c.emoji} ${c.label}</button>`})}
+    </div>
+    ${props.expanded?html`<div style=${{borderTop:"1px solid #f3f4f6",padding:"12px 16px"}}>
+      <div style=${{fontSize:12,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Responses</div>
+      <div style=${{display:"flex",flexWrap:"wrap",gap:6}}>
+        ${PEOPLE.map(function(p){var st=getRsvp(rsvps,p.name,game.id); var c=st?STATUS[st]:null; return html`<div key=${p.name} style=${{
+          padding:"5px 10px",borderRadius:8,fontSize:12,fontWeight:600,
+          background:c?c.bg:"#f3f4f6",color:c?c.color:"#9ca3af",border:"1px solid "+(c?c.border:"#e5e7eb")
+        }}>${p.name}${st?" "+c.emoji:""}</div>`})}
+      </div>
+      ${props.isAdmin?html`<div style=${{display:"flex",gap:8,marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6"}}>
+        <button onClick=${function(){props.onEdit(game)}} style=${{flex:1,padding:"8px 0",borderRadius:8,border:"1.5px solid #d1d5db",background:"#fff",fontSize:12,fontWeight:600,color:"#374151",cursor:"pointer"}}>Edit</button>
+        <button onClick=${function(){if(confirm("Delete this game?"))props.onDelete(game.id)}} style=${{flex:1,padding:"8px 0",borderRadius:8,border:"1.5px solid #fca5a5",background:"#fef2f2",fontSize:12,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
+      </div>`:null}
+    </div>`:null}
+  </div>`;
 }
 
-// ─── Overview Grid ───
-function OverviewTab({ games, rsvps }) {
-  const upcoming = [...games].filter(g => new Date(g.date+"T23:59:59") >= new Date()).sort((a,b)=>a.date.localeCompare(b.date));
-  const data = upcoming.length > 0 ? upcoming : games;
-  return (
-    <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
-      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, minWidth:data.length*70+100 }}>
-        <thead><tr>
-          <th style={{ position:"sticky", left:0, background:"#f7faf8", padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#374151", zIndex:2, borderBottom:"2px solid #e5e7eb" }}>Name</th>
-          {data.map(g => <th key={g.id} style={{ padding:"6px 4px", textAlign:"center", fontWeight:600, color:"#15803d", borderBottom:"2px solid #e5e7eb", whiteSpace:"nowrap", fontSize:10 }}>{formatDate(g.date)}</th>)}
-        </tr></thead>
-        <tbody>
-          {PEOPLE.map(p => (
-            <tr key={p.name}>
-              <td style={{ position:"sticky", left:0, background:"#fff", padding:"7px 10px", fontWeight:600, borderBottom:"1px solid #f3f4f6", zIndex:1, whiteSpace:"nowrap" }}>
-                <span style={{ color:p.gender==="M"?"#3b82f6":"#ec4899", fontSize:10, marginRight:4 }}>{p.gender==="M"?"♂":"♀"}</span>{p.name}
-              </td>
-              {data.map(g => {
-                const st = rsvps[p.name]?.[g.id]; const c = st?STATUS[st]:null;
-                return <td key={g.id} style={{ padding:4, textAlign:"center", borderBottom:"1px solid #f3f4f6" }}>
-                  {c ? <span style={{ display:"inline-block", width:26, height:26, lineHeight:"26px", borderRadius:8, background:c.bg, color:c.color, fontWeight:700, fontSize:13 }}>{c.emoji}</span>
-                     : <span style={{ color:"#d1d5db" }}>—</span>}
-                </td>;
-              })}
-            </tr>
-          ))}
-          <tr>
-            <td style={{ position:"sticky", left:0, background:"#f0fdf4", padding:"7px 10px", fontWeight:700, color:"#15803d", borderTop:"2px solid #bbf7d0", zIndex:1 }}>Total In</td>
-            {data.map(g => <td key={g.id} style={{ padding:4, textAlign:"center", fontWeight:700, color:"#15803d", background:"#f0fdf4", borderTop:"2px solid #bbf7d0", fontSize:13 }}>{PEOPLE.filter(p=>rsvps[p.name]?.[g.id]==="in").length}</td>)}
-          </tr>
-          <tr>
-            <td style={{ position:"sticky", left:0, background:"#eff6ff", padding:"6px 10px", fontWeight:600, color:"#1d4ed8", zIndex:1, fontSize:11 }}>♂ Guys</td>
-            {data.map(g => <td key={g.id} style={{ padding:4, textAlign:"center", fontWeight:600, color:"#1d4ed8", background:"#eff6ff", fontSize:12 }}>{PEOPLE.filter(p=>p.gender==="M"&&rsvps[p.name]?.[g.id]==="in").length}</td>)}
-          </tr>
-          <tr>
-            <td style={{ position:"sticky", left:0, background:"#fdf2f8", padding:"6px 10px", fontWeight:600, color:"#be185d", zIndex:1, fontSize:11 }}>♀ Girls</td>
-            {data.map(g => <td key={g.id} style={{ padding:4, textAlign:"center", fontWeight:600, color:"#be185d", background:"#fdf2f8", fontSize:12 }}>{PEOPLE.filter(p=>p.gender==="F"&&rsvps[p.name]?.[g.id]==="in").length}</td>)}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
+// ─── Overview ───
+function OverviewTab(props) {
+  var games=props.games, rsvps=props.rsvps;
+  var upcoming=games.filter(function(g){return new Date(g.date+"T23:59:59")>=new Date()}).sort(function(a,b){return a.date.localeCompare(b.date)});
+  var data=upcoming.length>0?upcoming:games;
+  return html`<div style=${{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+    <table style=${{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:data.length*70+100}}>
+      <thead><tr>
+        <th style=${{position:"sticky",left:0,background:"#f7faf8",padding:"8px 10px",textAlign:"left",fontWeight:700,color:"#374151",zIndex:2,borderBottom:"2px solid #e5e7eb"}}>Name</th>
+        ${data.map(function(g){return html`<th key=${g.id} style=${{padding:"6px 4px",textAlign:"center",fontWeight:600,color:"#15803d",borderBottom:"2px solid #e5e7eb",whiteSpace:"nowrap",fontSize:10}}>${fmtDate(g.date)}</th>`})}
+      </tr></thead>
+      <tbody>
+        ${PEOPLE.map(function(p){return html`<tr key=${p.name}>
+          <td style=${{position:"sticky",left:0,background:"#fff",padding:"7px 10px",fontWeight:600,borderBottom:"1px solid #f3f4f6",zIndex:1,whiteSpace:"nowrap"}}>
+            <span style=${{color:p.gender==="M"?"#3b82f6":"#ec4899",fontSize:10,marginRight:4}}>${p.gender==="M"?"♂":"♀"}</span>${p.name}
+          </td>
+          ${data.map(function(g){var st=getRsvp(rsvps,p.name,g.id); var c=st?STATUS[st]:null; return html`<td key=${g.id} style=${{padding:4,textAlign:"center",borderBottom:"1px solid #f3f4f6"}}>
+            ${c?html`<span style=${{display:"inline-block",width:26,height:26,lineHeight:"26px",borderRadius:8,background:c.bg,color:c.color,fontWeight:700,fontSize:13}}>${c.emoji}</span>`:html`<span style=${{color:"#d1d5db"}}>—</span>`}
+          </td>`})}
+        </tr>`})}
+        <tr>
+          <td style=${{position:"sticky",left:0,background:"#f0fdf4",padding:"7px 10px",fontWeight:700,color:"#15803d",borderTop:"2px solid #bbf7d0",zIndex:1}}>Total In</td>
+          ${data.map(function(g){return html`<td key=${g.id} style=${{padding:4,textAlign:"center",fontWeight:700,color:"#15803d",background:"#f0fdf4",borderTop:"2px solid #bbf7d0",fontSize:13}}>${PEOPLE.filter(function(p){return getRsvp(rsvps,p.name,g.id)==="in"}).length}</td>`})}
+        </tr>
+        <tr>
+          <td style=${{position:"sticky",left:0,background:"#eff6ff",padding:"6px 10px",fontWeight:600,color:"#1d4ed8",zIndex:1,fontSize:11}}>♂ Guys</td>
+          ${data.map(function(g){return html`<td key=${g.id} style=${{padding:4,textAlign:"center",fontWeight:600,color:"#1d4ed8",background:"#eff6ff",fontSize:12}}>${PEOPLE.filter(function(p){return p.gender==="M"&&getRsvp(rsvps,p.name,g.id)==="in"}).length}</td>`})}
+        </tr>
+        <tr>
+          <td style=${{position:"sticky",left:0,background:"#fdf2f8",padding:"6px 10px",fontWeight:600,color:"#be185d",zIndex:1,fontSize:11}}>♀ Girls</td>
+          ${data.map(function(g){return html`<td key=${g.id} style=${{padding:4,textAlign:"center",fontWeight:600,color:"#be185d",background:"#fdf2f8",fontSize:12}}>${PEOPLE.filter(function(p){return p.gender==="F"&&getRsvp(rsvps,p.name,g.id)==="in"}).length}</td>`})}
+        </tr>
+      </tbody>
+    </table>
+  </div>`;
 }
 
 // ═══ Main App ═══
 function GameTracker() {
-  const [identity, setIdentity]       = useState(undefined);
-  const [games, setGames]             = useState([]);
-  const [rsvps, setRsvps]             = useState({});
-  const [loading, setLoading]         = useState(true);
-  const [tab, setTab]                 = useState("schedule");
-  const [expandedGame, setExpandedGame] = useState(null);
-  const [formMode, setFormMode]       = useState(null);
+  var s=useState(undefined); var identity=s[0],setIdentity=s[1];
+  s=useState([]); var games=s[0],setGames=s[1];
+  s=useState({}); var rsvps=s[0],setRsvps=s[1];
+  s=useState(true); var loading=s[0],setLoading=s[1];
+  s=useState("schedule"); var tab=s[0],setTab=s[1];
+  s=useState(null); var expandedGame=s[0],setExpandedGame=s[1];
+  s=useState(null); var formMode=s[0],setFormMode=s[1];
 
-  // Load identity from localStorage, data from Firebase (real-time)
-  useEffect(() => {
-    const saved = localStorage.getItem("608-identity");
-    setIdentity(saved || null);
-
-    let offGames, offRsvps;
-
-    // Listen for games
-    offGames = dbListen("games", val => {
-      if (val) {
-        // Firebase stores arrays as objects with numeric keys — normalize
-        const arr = Array.isArray(val) ? val : Object.values(val);
+  useEffect(function(){
+    var saved=localStorage.getItem("608-identity");
+    setIdentity(saved||null);
+    var offG=dbListen("games",function(val){
+      if(val){
+        var arr=Array.isArray(val)?val:Object.values(val);
         setGames(arr.filter(Boolean));
       } else {
-        // First time: seed with defaults
-        const gamesObj = {};
-        DEFAULT_GAMES.forEach(g => { gamesObj[g.id] = g; });
-        dbSet("games", gamesObj);
+        var obj={}; DEFAULT_GAMES.forEach(function(g){obj[g.id]=g}); dbSet("games",obj);
         setGames(DEFAULT_GAMES);
       }
       setLoading(false);
     });
+    var offR=dbListen("rsvps",function(val){ setRsvps(val||{}); });
+    return function(){offG();offR()};
+  },[]);
 
-    // Listen for RSVPs
-    offRsvps = dbListen("rsvps", val => {
-      setRsvps(val || {});
-    });
-
-    return () => { offGames(); offRsvps(); };
-  }, []);
-
-  const handlePickIdentity = useCallback(name => {
-    setIdentity(name);
-    localStorage.setItem("608-identity", name);
-  }, []);
-
-  const handleSwitchUser = () => {
-    setIdentity(null);
-    localStorage.removeItem("608-identity");
-  };
-
-  const handleRsvp = useCallback((gameId, status) => {
-    if (!identity) return;
-    if (status) {
-      dbSet(`rsvps/${identity}/${gameId}`, status);
-    } else {
-      db.ref(`rsvps/${identity}/${gameId}`).remove();
-    }
-  }, [identity]);
-
-  const handleSaveGame = useCallback(game => {
-    dbSet(`games/${game.id}`, game);
-    setFormMode(null);
-  }, []);
-
-  const handleDeleteGame = useCallback(gameId => {
-    db.ref(`games/${gameId}`).remove();
-  }, []);
-
-  // ─── Render ───
-  if (loading || identity === undefined) {
-    return (<div style={{ minHeight:"100vh", background:"#f7faf8", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ textAlign:"center" }}><div style={{ fontSize:36, marginBottom:8 }}>⚽</div><div style={{ color:"#6b7280", fontSize:14 }}>Loading...</div></div>
-    </div>);
+  function pickIdentity(name){ setIdentity(name); localStorage.setItem("608-identity",name); }
+  function switchUser(){ setIdentity(null); localStorage.removeItem("608-identity"); }
+  function handleRsvp(gid,status){
+    if(!identity) return;
+    if(status) dbSet("rsvps/"+identity+"/"+gid,status);
+    else db.ref("rsvps/"+identity+"/"+gid).remove();
   }
-  if (!identity) return <PickIdentity onPick={handlePickIdentity} />;
+  function saveGame(game){ dbSet("games/"+game.id,game); setFormMode(null); }
+  function deleteGame(gid){ db.ref("games/"+gid).remove(); }
 
-  const upcoming = games.filter(g => new Date(g.date+"T23:59:59") >= new Date());
-  const past     = games.filter(g => new Date(g.date+"T23:59:59") < new Date());
-  const sorted   = [...upcoming.sort((a,b)=>a.date.localeCompare(b.date)), ...past.sort((a,b)=>b.date.localeCompare(a.date))];
+  if(loading||identity===undefined) return html`<div style=${{minHeight:"100vh",background:"#f7faf8",display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style=${{textAlign:"center"}}><div style=${{fontSize:36,marginBottom:8}}>⚽</div><div style=${{color:"#6b7280",fontSize:14}}>Loading...</div></div>
+  </div>`;
 
-  const tabBtn = act => ({
-    flex:1, padding:"10px 0", borderRadius:10, border:"none", fontSize:13, fontWeight:700, cursor:"pointer",
-    background:act?"#15803d":"transparent", color:act?"#fff":"#6b7280",
-  });
+  if(!identity) return html`<${PickIdentity} onPick=${pickIdentity}/>`;
 
-  return (
-    <div style={{ minHeight:"100vh", background:"#f7faf8", paddingBottom:80 }}>
-      {/* Header */}
-      <div style={{ background:"#15803d", padding:"16px 16px 20px", color:"#fff" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div>
-            <div style={{ fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.06em", opacity:0.8 }}>608 Elite · Code Red</div>
-            <h1 style={{ fontSize:20, fontWeight:800, margin:"2px 0 0" }}>Game Tracker ⚽</h1>
-          </div>
-          <button onClick={handleSwitchUser} style={{ background:"rgba(255,255,255,0.18)", border:"none", color:"#fff", padding:"5px 12px", borderRadius:8, fontSize:14, fontWeight:700, cursor:"pointer" }}>{identity} ▾</button>
+  var upcoming=games.filter(function(g){return new Date(g.date+"T23:59:59")>=new Date()});
+  var past=games.filter(function(g){return new Date(g.date+"T23:59:59")<new Date()});
+  var sorted=[].concat(upcoming.sort(function(a,b){return a.date.localeCompare(b.date)}),past.sort(function(a,b){return b.date.localeCompare(a.date)}));
+
+  function tabBtn(act){return{flex:1,padding:"10px 0",borderRadius:10,border:"none",fontSize:13,fontWeight:700,cursor:"pointer",background:act?"#15803d":"transparent",color:act?"#fff":"#6b7280"}}
+
+  return html`<div style=${{minHeight:"100vh",background:"#f7faf8",paddingBottom:80}}>
+    <div style=${{background:"#15803d",padding:"16px 16px 20px",color:"#fff"}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style=${{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>608 Elite · Code Red</div>
+          <h1 style=${{fontSize:20,fontWeight:800,margin:"2px 0 0"}}>Game Tracker ⚽</h1>
         </div>
-        <div style={{ display:"flex", gap:10, marginTop:14 }}>
-          <div style={{ flex:1, background:"rgba(255,255,255,0.12)", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-            <div style={{ fontSize:22, fontWeight:800 }}>{upcoming.length}</div><div style={{ fontSize:11, opacity:0.75, fontWeight:500 }}>Upcoming</div>
-          </div>
-          <div style={{ flex:1, background:"rgba(255,255,255,0.12)", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-            <div style={{ fontSize:22, fontWeight:800 }}>{upcoming.filter(g=>rsvps[identity]?.[g.id]==="in").length}</div><div style={{ fontSize:11, opacity:0.75, fontWeight:500 }}>You're In</div>
-          </div>
-          <div style={{ flex:1, background:"rgba(255,255,255,0.12)", borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-            <div style={{ fontSize:22, fontWeight:800 }}>{upcoming.filter(g=>!rsvps[identity]?.[g.id]).length}</div><div style={{ fontSize:11, opacity:0.75, fontWeight:500 }}>No Reply</div>
-          </div>
-        </div>
+        <button onClick=${switchUser} style=${{background:"rgba(255,255,255,0.18)",border:"none",color:"#fff",padding:"5px 12px",borderRadius:8,fontSize:14,fontWeight:700,cursor:"pointer"}}>${identity} ▾</button>
       </div>
-
-      {/* Tabs */}
-      <div style={{ padding:"12px 16px 0", position:"sticky", top:0, background:"#f7faf8", zIndex:10 }}>
-        <div style={{ display:"flex", gap:4, background:"#e5e7eb", borderRadius:12, padding:3 }}>
-          <button style={tabBtn(tab==="schedule")} onClick={()=>setTab("schedule")}>Schedule</button>
-          <button style={tabBtn(tab==="overview")} onClick={()=>setTab("overview")}>Everyone</button>
-          <button style={tabBtn(tab==="admin")}    onClick={()=>setTab("admin")}>Manage</button>
+      <div style=${{display:"flex",gap:10,marginTop:14}}>
+        <div style=${{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+          <div style=${{fontSize:22,fontWeight:800}}>${upcoming.length}</div><div style=${{fontSize:11,opacity:0.75,fontWeight:500}}>Upcoming</div>
         </div>
-      </div>
-
-      <div style={{ padding:"12px 16px" }}>
-        {/* Schedule */}
-        {tab==="schedule" && (
-          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {sorted.length===0
-              ? <div style={{ textAlign:"center", padding:"48px 20px", color:"#6b7280" }}><div style={{ fontSize:32, marginBottom:8 }}>📋</div><p style={{ fontSize:15, fontWeight:600 }}>No games yet</p></div>
-              : sorted.map(g => <GameCard key={g.id} game={g} rsvps={rsvps} identity={identity} onRsvp={handleRsvp} onExpand={setExpandedGame} expanded={expandedGame===g.id} isAdmin={false} onDelete={handleDeleteGame} onEdit={g=>setFormMode(g)} />)
-            }
-          </div>
-        )}
-
-        {/* Overview */}
-        {tab==="overview" && (
-          <div>
-            {games.length > 0 && <div style={{ background:"#fff", borderRadius:14, border:"1.5px solid #e5e7eb", overflow:"hidden" }}><OverviewTab games={games} rsvps={rsvps} /></div>}
-            {games.length > 0 && (
-              <div style={{ marginTop:16 }}>
-                <h3 style={{ fontSize:14, fontWeight:700, color:"#374151", marginBottom:10 }}>Attendance Summary</h3>
-                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                  {PEOPLE.map(p => {
-                    const ic = upcoming.filter(g=>rsvps[p.name]?.[g.id]==="in").length;
-                    const oc = upcoming.filter(g=>rsvps[p.name]?.[g.id]==="out").length;
-                    const mc = upcoming.filter(g=>rsvps[p.name]?.[g.id]==="maybe").length;
-                    const nr = upcoming.length-ic-oc-mc;
-                    return (
-                      <div key={p.name} style={{ background:"#fff", borderRadius:10, border:"1px solid #e5e7eb", padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                          <span style={{ fontSize:11, color:p.gender==="M"?"#3b82f6":"#ec4899" }}>{p.gender==="M"?"♂":"♀"}</span>
-                          <span style={{ fontWeight:600, fontSize:14 }}>{p.name}</span>
-                        </div>
-                        <div style={{ display:"flex", gap:6, fontSize:11, fontWeight:600 }}>
-                          {ic>0 && <span style={{ color:"#15803d", background:"#dcfce7", padding:"2px 7px", borderRadius:6 }}>{ic} in</span>}
-                          {mc>0 && <span style={{ color:"#b45309", background:"#fef3c7", padding:"2px 7px", borderRadius:6 }}>{mc} ?</span>}
-                          {oc>0 && <span style={{ color:"#dc2626", background:"#fee2e2", padding:"2px 7px", borderRadius:6 }}>{oc} out</span>}
-                          {nr>0 && <span style={{ color:"#9ca3af", background:"#f3f4f6", padding:"2px 7px", borderRadius:6 }}>{nr} —</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Manage */}
-        {tab==="admin" && (
-          <div>
-            {formMode ? (
-              <div style={{ background:"#fff", borderRadius:14, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
-                <GameForm game={formMode==="add"?null:formMode} onSave={handleSaveGame} onCancel={()=>setFormMode(null)} />
-              </div>
-            ) : (
-              <>
-                <button onClick={()=>setFormMode("add")} style={{ width:"100%", padding:"14px 0", borderRadius:12, border:"2px dashed #86efac", background:"#f0fdf4", fontSize:15, fontWeight:700, color:"#15803d", cursor:"pointer", marginBottom:12 }}>+ Add Game</button>
-                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                  {sorted.map(g => <GameCard key={g.id} game={g} rsvps={rsvps} identity={identity} onRsvp={handleRsvp} onExpand={setExpandedGame} expanded={expandedGame===g.id} isAdmin={true} onDelete={handleDeleteGame} onEdit={g=>setFormMode(g)} />)}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        <div style=${{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+          <div style=${{fontSize:22,fontWeight:800}}>${upcoming.filter(function(g){return getRsvp(rsvps,identity,g.id)==="in"}).length}</div><div style=${{fontSize:11,opacity:0.75,fontWeight:500}}>You're In</div>
+        </div>
+        <div style=${{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+          <div style=${{fontSize:22,fontWeight:800}}>${upcoming.filter(function(g){return!getRsvp(rsvps,identity,g.id)}).length}</div><div style=${{fontSize:11,opacity:0.75,fontWeight:500}}>No Reply</div>
+        </div>
       </div>
     </div>
-  );
+    <div style=${{padding:"12px 16px 0",position:"sticky",top:0,background:"#f7faf8",zIndex:10}}>
+      <div style=${{display:"flex",gap:4,background:"#e5e7eb",borderRadius:12,padding:3}}>
+        <button style=${tabBtn(tab==="schedule")} onClick=${function(){setTab("schedule")}}>Schedule</button>
+        <button style=${tabBtn(tab==="overview")} onClick=${function(){setTab("overview")}}>Everyone</button>
+        <button style=${tabBtn(tab==="admin")} onClick=${function(){setTab("admin")}}>Manage</button>
+      </div>
+    </div>
+    <div style=${{padding:"12px 16px"}}>
+
+      ${tab==="schedule"?html`<div style=${{display:"flex",flexDirection:"column",gap:10}}>
+        ${sorted.length===0?html`<div style=${{textAlign:"center",padding:"48px 20px",color:"#6b7280"}}><div style=${{fontSize:32,marginBottom:8}}>📋</div><p style=${{fontSize:15,fontWeight:600}}>No games yet</p></div>`
+        :sorted.map(function(g){return html`<${GameCard} key=${g.id} game=${g} rsvps=${rsvps} identity=${identity} onRsvp=${handleRsvp} onExpand=${setExpandedGame} expanded=${expandedGame===g.id} isAdmin=${false} onDelete=${deleteGame} onEdit=${function(g){setFormMode(g)}}/>`})}
+      </div>`:null}
+
+      ${tab==="overview"?html`<div>
+        ${games.length>0?html`<div style=${{background:"#fff",borderRadius:14,border:"1.5px solid #e5e7eb",overflow:"hidden"}}><${OverviewTab} games=${games} rsvps=${rsvps}/></div>`:null}
+        ${games.length>0?html`<div style=${{marginTop:16}}>
+          <h3 style=${{fontSize:14,fontWeight:700,color:"#374151",marginBottom:10}}>Attendance Summary</h3>
+          <div style=${{display:"flex",flexDirection:"column",gap:6}}>
+            ${PEOPLE.map(function(p){
+              var ic=upcoming.filter(function(g){return getRsvp(rsvps,p.name,g.id)==="in"}).length;
+              var oc=upcoming.filter(function(g){return getRsvp(rsvps,p.name,g.id)==="out"}).length;
+              var mc=upcoming.filter(function(g){return getRsvp(rsvps,p.name,g.id)==="maybe"}).length;
+              var nr=upcoming.length-ic-oc-mc;
+              return html`<div key=${p.name} style=${{background:"#fff",borderRadius:10,border:"1px solid #e5e7eb",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style=${{display:"flex",alignItems:"center",gap:6}}>
+                  <span style=${{fontSize:11,color:p.gender==="M"?"#3b82f6":"#ec4899"}}>${p.gender==="M"?"♂":"♀"}</span>
+                  <span style=${{fontWeight:600,fontSize:14}}>${p.name}</span>
+                </div>
+                <div style=${{display:"flex",gap:6,fontSize:11,fontWeight:600}}>
+                  ${ic>0?html`<span style=${{color:"#15803d",background:"#dcfce7",padding:"2px 7px",borderRadius:6}}>${ic} in</span>`:null}
+                  ${mc>0?html`<span style=${{color:"#b45309",background:"#fef3c7",padding:"2px 7px",borderRadius:6}}>${mc} ?</span>`:null}
+                  ${oc>0?html`<span style=${{color:"#dc2626",background:"#fee2e2",padding:"2px 7px",borderRadius:6}}>${oc} out</span>`:null}
+                  ${nr>0?html`<span style=${{color:"#9ca3af",background:"#f3f4f6",padding:"2px 7px",borderRadius:6}}>${nr} —</span>`:null}
+                </div>
+              </div>`})}
+          </div>
+        </div>`:null}
+      </div>`:null}
+
+      ${tab==="admin"?html`<div>
+        ${formMode?html`<div style=${{background:"#fff",borderRadius:14,border:"1.5px solid #e5e7eb",overflow:"hidden"}}>
+          <${GameForm} game=${formMode==="add"?null:formMode} onSave=${saveGame} onCancel=${function(){setFormMode(null)}}/>
+        </div>`
+        :html`<div>
+          <button onClick=${function(){setFormMode("add")}} style=${{width:"100%",padding:"14px 0",borderRadius:12,border:"2px dashed #86efac",background:"#f0fdf4",fontSize:15,fontWeight:700,color:"#15803d",cursor:"pointer",marginBottom:12}}>+ Add Game</button>
+          <div style=${{display:"flex",flexDirection:"column",gap:10}}>
+            ${sorted.map(function(g){return html`<${GameCard} key=${g.id} game=${g} rsvps=${rsvps} identity=${identity} onRsvp=${handleRsvp} onExpand=${setExpandedGame} expanded=${expandedGame===g.id} isAdmin=${true} onDelete=${deleteGame} onEdit=${function(g){setFormMode(g)}}/>`})}
+          </div>
+        </div>`}
+      </div>`:null}
+
+    </div>
+  </div>`;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<GameTracker />);
+ReactDOM.createRoot(document.getElementById("root")).render(html`<${GameTracker}/>`);
 </script>
 </body>
 </html>
