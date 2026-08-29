@@ -12,6 +12,8 @@
     button { font-family:inherit; }
     #root { min-height:100vh; min-height:100dvh; }
     #error-box { display:none; position:fixed; top:20px; left:20px; right:20px; background:#fef2f2; border:2px solid #fca5a5; border-radius:12px; padding:16px; z-index:999; color:#dc2626; font-size:13px; font-weight:600; }
+    .cal-toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:#111827; color:#fff; padding:10px 20px; borderRadius:12px; font-size:13px; font-weight:600; z-index:100; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.2); animation: fadeInOut 2.5s ease forwards; }
+    @keyframes fadeInOut { 0%{opacity:0;transform:translateX(-50%) translateY(10px)} 15%{opacity:1;transform:translateX(-50%) translateY(0)} 85%{opacity:1;transform:translateX(-50%) translateY(0)} 100%{opacity:0;transform:translateX(-50%) translateY(-10px)} }
   </style>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -23,7 +25,7 @@
 <div id="root"></div>
 <div id="error-box"></div>
 <script>
-// ═══ htm setup — like JSX but no build step ═══
+// ═══ htm setup ═══
 var html = htm.bind(React.createElement);
 var useState = React.useState, useEffect = React.useEffect, useCallback = React.useCallback;
 
@@ -47,23 +49,25 @@ var db = firebase.database();
 function dbSet(path, val) { return db.ref(path).set(val); }
 function dbListen(path, cb) { var ref=db.ref(path); ref.on("value",function(s){cb(s.val())}); return function(){ref.off("value")}; }
 
-// ═══ Constants ═══
+// ═══ Constants — NEW ROSTER ═══
 var PEOPLE = [
-  {name:"Bryce",gender:"M"},{name:"Brooke",gender:"F"},{name:"Faysal",gender:"M"},
-  {name:"Evan",gender:"M"},{name:"Morgan",gender:"F"},{name:"Quintinn",gender:"M"},
-  {name:"Josh",gender:"M"},{name:"Sydney",gender:"F"},{name:"Isaac",gender:"M"},
-  {name:"Adam",gender:"M"},{name:"Jenna",gender:"F"}
+  {name:"Bryce",gender:"M"},{name:"Isaac",gender:"M"},{name:"Evan",gender:"M"},
+  {name:"Quintin",gender:"M"},{name:"Adam",gender:"M"},{name:"Faysal",gender:"M"},
+  {name:"Matias",gender:"M"},
+  {name:"Sam",gender:"F"},{name:"Claire",gender:"F"},{name:"Brooke",gender:"F"},
+  {name:"Lauren",gender:"F"}
 ];
 
+// ═══ NEW FALL 2026 SCHEDULE ═══
 var DEFAULT_GAMES = [
-  {id:"g01",date:"2026-06-17",time:"9:00 PM",opponent:"Fire Fairies",location:"Field 2",homeAway:"home"},
-  {id:"g02",date:"2026-06-24",time:"6:00 PM",opponent:"Chugga Chugga Shoot Shoot",location:"Field 1",homeAway:"home"},
-  {id:"g03",date:"2026-07-01",time:"8:00 PM",opponent:"Old Knees Bad Ankles",location:"Field 1",homeAway:"home"},
-  {id:"g04",date:"2026-07-08",time:"8:00 PM",opponent:"The Grady Bunch",location:"Field 2",homeAway:"away"},
-  {id:"g05",date:"2026-07-15",time:"9:00 PM",opponent:"Madison United FC",location:"Field 2",homeAway:"away"},
-  {id:"g06",date:"2026-07-22",time:"9:00 PM",opponent:"Fire Fairies",location:"Field 2",homeAway:"home"},
-  {id:"g07",date:"2026-07-29",time:"8:00 PM",opponent:"Chugga Chugga Shoot Shoot",location:"Field 1",homeAway:"home"},
-  {id:"g08",date:"2026-08-05",time:"6:00 PM",opponent:"PPI Green",location:"Field 2",homeAway:"away"}
+  {id:"f01",date:"2026-08-19",time:"9:00 PM",opponent:"Fire Fairies",location:"Field 2",homeAway:"home",score:"9 - 5",result:"W"},
+  {id:"f02",date:"2026-08-26",time:"6:00 PM",opponent:"Chugga Chugga Shoot Shoot",location:"Field 1",homeAway:"home",score:"6 - 3",result:"W"},
+  {id:"f03",date:"2026-09-02",time:"8:00 PM",opponent:"Old Knees Bad Ankles",location:"Field 1",homeAway:"home"},
+  {id:"f04",date:"2026-09-09",time:"8:00 PM",opponent:"The Grady Bunch",location:"Field 2",homeAway:"away"},
+  {id:"f05",date:"2026-09-16",time:"9:00 PM",opponent:"Madison United FC",location:"Field 2",homeAway:"away"},
+  {id:"f06",date:"2026-09-23",time:"9:00 PM",opponent:"Fire Fairies",location:"Field 2",homeAway:"home"},
+  {id:"f07",date:"2026-09-30",time:"8:00 PM",opponent:"Chugga Chugga Shoot Shoot",location:"Field 1",homeAway:"home"},
+  {id:"f08",date:"2026-10-07",time:"6:00 PM",opponent:"PPI Green",location:"Field 2",homeAway:"away"}
 ];
 
 var STATUS = {
@@ -80,19 +84,59 @@ function genId() { return "g"+Date.now().toString(36)+Math.random().toString(36)
 function getToday() { return new Date().toISOString().split("T")[0]; }
 function getRsvp(rsvps,name,gid) { return rsvps && rsvps[name] && rsvps[name][gid] || null; }
 
+// ═══ Google Calendar Link Builder ═══
+function buildGCalUrl(game) {
+  // Parse time like "9:00 PM" → 24h
+  var t = game.time || "7:00 PM";
+  var parts = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!parts) return null;
+  var h = parseInt(parts[1]), m = parseInt(parts[2]), ap = parts[3].toUpperCase();
+  if (ap==="PM" && h!==12) h+=12;
+  if (ap==="AM" && h===12) h=0;
+
+  // Build start/end (1.5hr game)
+  var ds = game.date.replace(/-/g,"");
+  var startStr = ds+"T"+String(h).padStart(2,"0")+String(m).padStart(2,"0")+"00";
+  var eh = h+1, em = m+30; if(em>=60){em-=60;eh++;}
+  var endStr = ds+"T"+String(eh).padStart(2,"0")+String(em).padStart(2,"0")+"00";
+
+  var title = "Code Red vs " + (game.opponent||"TBD") + (game.homeAway?" ("+game.homeAway.toUpperCase()+")":"");
+  var details = "608 Elite · Code Red\\n" + (game.homeAway==="home"?"Home":"Away") + " game at " + (game.location||"TBD");
+  var loc = (game.location||"") + ", Madison WI";
+
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE"
+    + "&text=" + encodeURIComponent(title)
+    + "&dates=" + startStr + "/" + endStr
+    + "&details=" + encodeURIComponent(details)
+    + "&location=" + encodeURIComponent(loc)
+    + "&ctz=America/Chicago";
+}
+
 // ─── Pick Identity ───
 function PickIdentity(props) {
+  var guys = PEOPLE.filter(function(p){return p.gender==="M"});
+  var girls = PEOPLE.filter(function(p){return p.gender==="F"});
   return html`<div style=${{minHeight:"100vh",background:"#f7faf8",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
     <div style=${{textAlign:"center",marginBottom:32}}>
       <div style=${{fontSize:40,marginBottom:8}}>⚽</div>
       <h1 style=${{fontSize:22,fontWeight:700,margin:0}}>608 Elite Game Tracker</h1>
       <p style=${{color:"#6b7280",fontSize:14,marginTop:6}}>Who are you?</p>
     </div>
-    <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,width:"100%",maxWidth:340}}>
-      ${PEOPLE.map(function(p){return html`<button key=${p.name} onClick=${function(){props.onPick(p.name)}} style=${{
-        padding:"14px 8px",borderRadius:12,border:"2px solid #e5e7eb",background:"#fff",cursor:"pointer",
-        fontSize:15,fontWeight:600,color:"#111827",display:"flex",alignItems:"center",justifyContent:"center",gap:6
-      }}><span style=${{fontSize:12,color:p.gender==="M"?"#3b82f6":"#ec4899"}}>${p.gender==="M"?"♂":"♀"}</span> ${p.name}</button>`})}
+    <div style=${{width:"100%",maxWidth:360}}>
+      <div style=${{fontSize:11,fontWeight:700,color:"#3b82f6",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>♂ Guys</div>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+        ${guys.map(function(p){return html`<button key=${p.name} onClick=${function(){props.onPick(p.name)}} style=${{
+          padding:"13px 8px",borderRadius:12,border:"2px solid #dbeafe",background:"#fff",cursor:"pointer",
+          fontSize:15,fontWeight:600,color:"#111827",textAlign:"center"
+        }}>${p.name}</button>`})}
+      </div>
+      <div style=${{fontSize:11,fontWeight:700,color:"#ec4899",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>♀ Girls</div>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        ${girls.map(function(p){return html`<button key=${p.name} onClick=${function(){props.onPick(p.name)}} style=${{
+          padding:"13px 8px",borderRadius:12,border:"2px solid #fce7f3",background:"#fff",cursor:"pointer",
+          fontSize:15,fontWeight:600,color:"#111827",textAlign:"center"
+        }}>${p.name}</button>`})}
+      </div>
     </div>
   </div>`;
 }
@@ -105,6 +149,8 @@ function GameForm(props) {
   s=useState(game&&game.opponent||""); var opp=s[0],setOpp=s[1];
   s=useState(game&&game.location||""); var loc=s[0],setLoc=s[1];
   s=useState(game&&game.homeAway||"home"); var ha=s[0],setHa=s[1];
+  s=useState(game&&game.score||""); var score=s[0],setScore=s[1];
+  s=useState(game&&game.result||""); var result=s[0],setResult=s[1];
   var inp={width:"100%",padding:"10px 12px",borderRadius:8,border:"1.5px solid #d1d5db",fontSize:15,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"#fff",color:"#111827"};
   var lbl={fontSize:12,fontWeight:600,color:"#374151",marginBottom:4,display:"block",textTransform:"uppercase",letterSpacing:"0.04em"};
   return html`<div style=${{padding:16}}>
@@ -128,9 +174,22 @@ function GameForm(props) {
           </div>
         </div>
       </div>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div><label style=${lbl}>Score</label><input type="text" value=${score} onInput=${function(e){setScore(e.target.value)}} placeholder="e.g. 6 - 3" style=${inp}/></div>
+        <div><label style=${lbl}>Result</label>
+          <div style=${{display:"flex",gap:6}}>
+            ${["W","L","D",""].map(function(v){var lb=v||"—"; return html`<button key=${lb} onClick=${function(){setResult(v)}} style=${{
+              flex:1,padding:"10px 0",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",
+              border:result===v?"2px solid #15803d":"2px solid #e5e7eb",
+              background:result===v?"#dcfce7":"#fafafa",
+              color:result===v?"#15803d":"#9ca3af"
+            }}>${lb}</button>`})}
+          </div>
+        </div>
+      </div>
       <div style=${{display:"flex",gap:10,marginTop:4}}>
         <button onClick=${props.onCancel} style=${{flex:1,padding:"11px 0",borderRadius:10,border:"1.5px solid #d1d5db",background:"#fff",fontSize:14,fontWeight:600,color:"#374151",cursor:"pointer"}}>Cancel</button>
-        <button disabled=${!date} onClick=${function(){if(date)props.onSave({id:game&&game.id||genId(),date:date,time:time,opponent:opp,location:loc,homeAway:ha})}} style=${{
+        <button disabled=${!date} onClick=${function(){if(date)props.onSave({id:game&&game.id||genId(),date:date,time:time,opponent:opp,location:loc,homeAway:ha,score:score||null,result:result||null})}} style=${{
           flex:1,padding:"11px 0",borderRadius:10,border:"none",background:date?"#15803d":"#d1d5db",fontSize:14,fontWeight:600,color:date?"#fff":"#9ca3af",cursor:date?"pointer":"default"
         }}>Save</button>
       </div>
@@ -147,8 +206,17 @@ function GameCard(props) {
   var myStatus = getRsvp(rsvps,identity,game.id);
   var isPast = new Date(game.date+"T23:59:59") < new Date();
   var isToday = game.date === getToday();
+  var hasScore = game.score && game.score.trim();
 
-  return html`<div style=${{background:"#fff",borderRadius:14,border:isToday?"2px solid #15803d":"1.5px solid #e5e7eb",overflow:"hidden",opacity:isPast?0.55:1,boxShadow:isToday?"0 0 0 3px rgba(21,128,61,0.1)":"none"}}>
+  function addToCal(e) {
+    e.stopPropagation();
+    var url = buildGCalUrl(game);
+    if (url) window.open(url, "_blank");
+  }
+
+  var resultColors = {W:{bg:"#dcfce7",color:"#15803d"},L:{bg:"#fee2e2",color:"#dc2626"},D:{bg:"#fef3c7",color:"#b45309"}};
+
+  return html`<div style=${{background:"#fff",borderRadius:14,border:isToday?"2px solid #15803d":"1.5px solid #e5e7eb",overflow:"hidden",opacity:isPast&&!hasScore?0.55:isPast?0.8:1,boxShadow:isToday?"0 0 0 3px rgba(21,128,61,0.1)":"none"}}>
     <div onClick=${function(){props.onExpand(props.expanded?null:game.id)}} style=${{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
       <div style=${{flex:1,minWidth:0}}>
         <div style=${{fontSize:13,fontWeight:600,color:"#15803d",marginBottom:2,display:"flex",alignItems:"center",gap:6}}>
@@ -160,20 +228,30 @@ function GameCard(props) {
           ${game.homeAway?html`<span style=${{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",padding:"2px 6px",borderRadius:5,background:game.homeAway==="home"?"#dcfce7":"#ede9fe",color:game.homeAway==="home"?"#15803d":"#7c3aed"}}>${game.homeAway==="home"?"HOME":"AWAY"}</span>`:null}
         </div>
         ${game.location?html`<div style=${{fontSize:12,color:"#6b7280",marginTop:2}}>📍 ${game.location}</div>`:null}
+        ${hasScore?html`<div style=${{marginTop:6,display:"flex",alignItems:"center",gap:8}}>
+          <span style=${{fontSize:15,fontWeight:800,color:"#111827",letterSpacing:"0.02em"}}>${game.score}</span>
+          ${game.result?html`<span style=${{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:5,textTransform:"uppercase",background:(resultColors[game.result]||{}).bg||"#f3f4f6",color:(resultColors[game.result]||{}).color||"#6b7280"}}>${game.result==="W"?"WIN":game.result==="L"?"LOSS":"DRAW"}</span>`:null}
+          <span style=${{fontSize:10,color:"#9ca3af",fontWeight:600}}>FT</span>
+        </div>`:null}
       </div>
-      <div style=${{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-        <div style=${{background:"#dbeafe",color:"#1d4ed8",padding:"4px 8px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>♂ ${guysIn}</div>
-        <div style=${{background:"#fce7f3",color:"#be185d",padding:"4px 8px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>♀ ${girlsIn}</div>
-        <div style=${{fontSize:12,color:"#6b7280",fontWeight:600,minWidth:20,textAlign:"center"}}>${attending.length}</div>
-        <span style=${{fontSize:12,color:"#9ca3af",transform:props.expanded?"rotate(180deg)":"rotate(0)",transition:"0.2s"}}>▼</span>
+      <div style=${{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
+        <div style=${{display:"flex",gap:6,alignItems:"center"}}>
+          <div style=${{background:"#dbeafe",color:"#1d4ed8",padding:"4px 8px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>♂ ${guysIn}</div>
+          <div style=${{background:"#fce7f3",color:"#be185d",padding:"4px 8px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>♀ ${girlsIn}</div>
+          <span style=${{fontSize:12,color:"#9ca3af",transform:props.expanded?"rotate(180deg)":"rotate(0)",transition:"0.2s"}}>▼</span>
+        </div>
+        ${!isPast?html`<button onClick=${addToCal} style=${{
+          padding:"4px 10px",borderRadius:7,border:"1.5px solid #dbeafe",background:"#eff6ff",
+          fontSize:11,fontWeight:600,color:"#1d4ed8",cursor:"pointer",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"
+        }}>📅 Add to Cal</button>`:null}
       </div>
     </div>
-    <div style=${{padding:"0 16px 12px",display:"flex",gap:8}}>
+    ${!isPast?html`<div style=${{padding:"0 16px 12px",display:"flex",gap:8}}>
       ${["in","out","maybe"].map(function(st){var c=STATUS[st]; var act=myStatus===st; return html`<button key=${st} onClick=${function(){props.onRsvp(game.id,myStatus===st?null:st)}} style=${{
         flex:1,padding:"9px 0",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer",
         border:act?"2px solid "+c.color:"2px solid #e5e7eb",background:act?c.bg:"#fafafa",color:act?c.color:"#9ca3af"
       }}>${c.emoji} ${c.label}</button>`})}
-    </div>
+    </div>`:null}
     ${props.expanded?html`<div style=${{borderTop:"1px solid #f3f4f6",padding:"12px 16px"}}>
       <div style=${{fontSize:12,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Responses</div>
       <div style=${{display:"flex",flexWrap:"wrap",gap:6}}>
@@ -227,6 +305,30 @@ function OverviewTab(props) {
   </div>`;
 }
 
+// ═══ Season Record ═══
+function SeasonRecord(props) {
+  var games = props.games;
+  var played = games.filter(function(g){return g.score && g.score.trim()});
+  var wins = played.filter(function(g){return g.result==="W"}).length;
+  var losses = played.filter(function(g){return g.result==="L"}).length;
+  var draws = played.filter(function(g){return g.result==="D"}).length;
+  if (played.length===0) return null;
+  return html`<div style=${{display:"flex",gap:8,marginTop:10}}>
+    <div style=${{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"8px 12px",textAlign:"center"}}>
+      <div style=${{fontSize:18,fontWeight:800}}>${wins}-${losses}${draws>0?"-"+draws:""}</div>
+      <div style=${{fontSize:10,opacity:0.75,fontWeight:500}}>Record</div>
+    </div>
+    <div style=${{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"8px 12px",textAlign:"center"}}>
+      <div style=${{fontSize:18,fontWeight:800}}>${played.length}</div>
+      <div style=${{fontSize:10,opacity:0.75,fontWeight:500}}>Played</div>
+    </div>
+    <div style=${{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"8px 12px",textAlign:"center"}}>
+      <div style=${{fontSize:18,fontWeight:800}}>${games.length - played.length}</div>
+      <div style=${{fontSize:10,opacity:0.75,fontWeight:500}}>Remaining</div>
+    </div>
+  </div>`;
+}
+
 // ═══ Main App ═══
 function GameTracker() {
   var s=useState(undefined); var identity=s[0],setIdentity=s[1];
@@ -239,18 +341,25 @@ function GameTracker() {
 
   useEffect(function(){
     var saved=localStorage.getItem("608-identity");
+    // Check if saved identity is still on the roster
+    var validNames = PEOPLE.map(function(p){return p.name});
+    if (saved && validNames.indexOf(saved)===-1) {
+      localStorage.removeItem("608-identity");
+      saved = null;
+    }
     setIdentity(saved||null);
-    var offG=dbListen("games",function(val){
+
+    var offG=dbListen("fall2026_games",function(val){
       if(val){
         var arr=Array.isArray(val)?val:Object.values(val);
         setGames(arr.filter(Boolean));
       } else {
-        var obj={}; DEFAULT_GAMES.forEach(function(g){obj[g.id]=g}); dbSet("games",obj);
+        var obj={}; DEFAULT_GAMES.forEach(function(g){obj[g.id]=g}); dbSet("fall2026_games",obj);
         setGames(DEFAULT_GAMES);
       }
       setLoading(false);
     });
-    var offR=dbListen("rsvps",function(val){ setRsvps(val||{}); });
+    var offR=dbListen("fall2026_rsvps",function(val){ setRsvps(val||{}); });
     return function(){offG();offR()};
   },[]);
 
@@ -258,11 +367,21 @@ function GameTracker() {
   function switchUser(){ setIdentity(null); localStorage.removeItem("608-identity"); }
   function handleRsvp(gid,status){
     if(!identity) return;
-    if(status) dbSet("rsvps/"+identity+"/"+gid,status);
-    else db.ref("rsvps/"+identity+"/"+gid).remove();
+    if(status) dbSet("fall2026_rsvps/"+identity+"/"+gid,status);
+    else db.ref("fall2026_rsvps/"+identity+"/"+gid).remove();
   }
-  function saveGame(game){ dbSet("games/"+game.id,game); setFormMode(null); }
-  function deleteGame(gid){ db.ref("games/"+gid).remove(); }
+  function saveGame(game){ dbSet("fall2026_games/"+game.id,game); setFormMode(null); }
+  function deleteGame(gid){ db.ref("fall2026_games/"+gid).remove(); }
+
+  function addAllToCal() {
+    var upcoming = games.filter(function(g){return new Date(g.date+"T23:59:59")>=new Date()});
+    upcoming.forEach(function(g,i){
+      setTimeout(function(){
+        var url = buildGCalUrl(g);
+        if(url) window.open(url,"_blank");
+      }, i*800);
+    });
+  }
 
   if(loading||identity===undefined) return html`<div style=${{minHeight:"100vh",background:"#f7faf8",display:"flex",alignItems:"center",justifyContent:"center"}}>
     <div style=${{textAlign:"center"}}><div style=${{fontSize:36,marginBottom:8}}>⚽</div><div style=${{color:"#6b7280",fontSize:14}}>Loading...</div></div>
@@ -281,7 +400,7 @@ function GameTracker() {
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
           <div style=${{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>608 Elite · Code Red</div>
-          <h1 style=${{fontSize:20,fontWeight:800,margin:"2px 0 0"}}>Game Tracker ⚽</h1>
+          <h1 style=${{fontSize:20,fontWeight:800,margin:"2px 0 0"}}>Fall 2026 ⚽</h1>
         </div>
         <button onClick=${switchUser} style=${{background:"rgba(255,255,255,0.18)",border:"none",color:"#fff",padding:"5px 12px",borderRadius:8,fontSize:14,fontWeight:700,cursor:"pointer"}}>${identity} ▾</button>
       </div>
@@ -296,6 +415,7 @@ function GameTracker() {
           <div style=${{fontSize:22,fontWeight:800}}>${upcoming.filter(function(g){return!getRsvp(rsvps,identity,g.id)}).length}</div><div style=${{fontSize:11,opacity:0.75,fontWeight:500}}>No Reply</div>
         </div>
       </div>
+      <${SeasonRecord} games=${games}/>
     </div>
     <div style=${{padding:"12px 16px 0",position:"sticky",top:0,background:"#f7faf8",zIndex:10}}>
       <div style=${{display:"flex",gap:4,background:"#e5e7eb",borderRadius:12,padding:3}}>
@@ -306,9 +426,15 @@ function GameTracker() {
     </div>
     <div style=${{padding:"12px 16px"}}>
 
-      ${tab==="schedule"?html`<div style=${{display:"flex",flexDirection:"column",gap:10}}>
+      ${tab==="schedule"?html`<div>
+        <button onClick=${addAllToCal} style=${{
+          width:"100%",padding:"12px 0",borderRadius:12,border:"1.5px solid #dbeafe",background:"#eff6ff",
+          fontSize:14,fontWeight:700,color:"#1d4ed8",cursor:"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6
+        }}>📅 Add All Upcoming Games to Google Calendar</button>
+        <div style=${{display:"flex",flexDirection:"column",gap:10}}>
         ${sorted.length===0?html`<div style=${{textAlign:"center",padding:"48px 20px",color:"#6b7280"}}><div style=${{fontSize:32,marginBottom:8}}>📋</div><p style=${{fontSize:15,fontWeight:600}}>No games yet</p></div>`
         :sorted.map(function(g){return html`<${GameCard} key=${g.id} game=${g} rsvps=${rsvps} identity=${identity} onRsvp=${handleRsvp} onExpand=${setExpandedGame} expanded=${expandedGame===g.id} isAdmin=${false} onDelete=${deleteGame} onEdit=${function(g){setFormMode(g)}}/>`})}
+        </div>
       </div>`:null}
 
       ${tab==="overview"?html`<div>
